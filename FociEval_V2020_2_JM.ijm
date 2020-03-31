@@ -43,7 +43,7 @@
 saveImgs 		= true;
 measure_fSize 	= true;
 prominence 	= 2000.0; // determines how sensitive the peak finder is to smaller maxima
-CutOff  = 0.5; // value for relative cutoff (Cutoff * (Max - Min)) to determine foci area: 1 = full area, 0 = Zero Area, 0.5 = full area at half maximum
+CutOff  = 0.4; // value for relative cutoff (Cutoff * (Max - Min)) to determine foci area: 1 = full area, 0 = Zero Area, 0.5 = full area at half maximum
 
 ChFoci = 1; // which channel contains the foci staining?
 ChDAPI =2; // which channel contains the DAPI staining?
@@ -81,7 +81,6 @@ File.makeDirectory(savepath);
 // Segment DAPI Nuclei
 setSlice(2);
 CellMask = CellSeg(Image, ChDAPI);
-//removeIslands(CellMask, 500);
 
 // Get selection of segmented cells
 selectForeground(CellMask);
@@ -169,37 +168,28 @@ for (i = 0; i < NCells; i++) {
 		getSelectionCoordinates(x, y);
 		nFoci = x.length;
 	}
-	
-	/*
-	if (saveImgs){
-		saveAs(".tif", savepath + ROIname[i]);
-		rename(ROIname[i]);
 
-		// close image if no foci size measured. Otherwise, it's still needed.
-		if (!measure_fSize) {
-			close();
-		}		
-	}
-	*/
+	
 	// This part measures the size of a foci
 	if (measure_fSize && nFoci > 0) {
 		selectWindow(Cellname[i]);		
 
 		// get background
-		setSlice(1);
+		setSlice(3);
 		selectForeground(Cellname[i]);
 		run("Create Selection");
+		resetThreshold();
 		setSlice(2);
-		run("Measure");
-		BG = getResult("Median", nResults() - 1);
-		exit();
+//		BG = getPercentile(Cellname[i], 25);
+		
+
 		// Check the number of foci; If there's only one, particle segmentation fails.
 		if (nFoci > 1) {
 			run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Segmented Particles]");
 			run("Create Selection");		
 			close();
 		} else {
-			run("Create Selection");
+			run("Restore Selection");
 		}
 
 		// Add another channel to saveImg
@@ -239,7 +229,7 @@ for (i = 0; i < NCells; i++) {
 			close();			
 			selectWindow(Cellname[i]);
 			run("Paste");
-			
+			resetThreshold();
 			// store area of each foci
 			Foci_sizes[j-NCells] = getResult("Area", nResults() - 1);
 		}
@@ -259,24 +249,24 @@ for (i = 0; i < NCells; i++) {
 		resetThreshold();
 		setSlice(2);
 		run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
-
-		// If images of each cell should be stored.
-		if (saveImgs){
-			if (Validation_mode) {
-				// If data comes from validation mode, add this to the filename.
-				saveAs(".tif", savepath + Cellname[i] + "_valid");
-				rename(Cellname[i]);
-				close();
-			} else {
-				// If data comes from automated analysis, specify this in the file name
-				saveAs(".tif", savepath + Cellname[i] + "_auto");
-				rename(Cellname[i]);
-				close();
-			}
-			
+	}
+	
+	// If images of each cell should be stored (no matter how many foci).
+	if (saveImgs){
+		if (Validation_mode) {
+			// If data comes from validation mode, add this to the filename.
+			saveAs(".tif", savepath + Cellname[i] + "_valid");
+			rename(Cellname[i]);
+			close();
 		} else {
+			// If data comes from automated analysis, specify this in the file name
+			saveAs(".tif", savepath + Cellname[i] + "_auto");
+			rename(Cellname[i]);
 			close();
 		}
+		
+	} else {
+		close();
 	}
 
 	// print results to table
@@ -310,19 +300,21 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 
 	selectWindow(Image);
 	roiManager("Select", ROI);
-			
-	run("Duplicate...", "duplicate"); // duplicate piece
+
+	// duplicate piece
+	run("Duplicate...", "duplicate"); 
 	rename("PuzzlePiece");
 	setSlice(Slice);
 
 	// if automated analysis is desired: first bracket.
 	// else: automated analysis is replaced by manual foci delineation.
+	run("Measure");
+	Max = getResult("Max", nResults() -1);
+	BG = getPercentile("PuzzlePiece", 5);
+	
 	if (valid_mode == false) {
-		run("Measure");
-		Max = getResult("Max", nResults() -1);
-		setThreshold(Max - p * (Max - BG), Max);
-		run("Clear Outside", "slice");
-		run("Convert to Mask", "method=Default background=Dark black");
+		setThreshold(BG + p * (Max - BG), Max);
+		run("Convert to Mask", "background=Dark black");
 		selectForeground("PuzzlePiece");
 		run("Measure");
 		run("16-bit");
@@ -331,14 +323,14 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 	} else {
 		run("Clear Outside", "slice");
 		run("Select None");
-		run("Enhance Contrast", "saturated=0.05");
-		run("In [+]"); // enlarge a bit.
+		setMinAndMax(BG, Max);
+		run("In [+]"); // enlarge window a bit.
 		run("In [+]");
 		run("In [+]");
 		run("In [+]");
 		setTool("freehand"); // set free ROI tool
 		waitForUser("Input needed", "draw outline of Foci in image. click 'ok' when done.");
-		run("Clear Outside", "slice");s
+		run("Clear Outside", "slice");
 		run("Set...", "value=100000");
 		selectForeground("PuzzlePiece");
 		run("Measure");
@@ -346,6 +338,32 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 	}
 }
 
+function getPercentile(Image, perc){
+
+	selectWindow(Image);
+
+	// get histogram
+	nBins = 256;
+	getHistogram(values, counts, nBins);
+
+	// get total number of counts
+	total = 0;
+	for (i = 0; i < counts.length; i++) {
+		total = total + counts[i];
+	}
+
+	// go through histogram until threshold is reached
+	c = counts[0];
+	i = 0;
+	do {
+		i = i+1;
+		c = c + counts[i];		
+	} while (c < perc/100 * total);
+
+	print(perc +"% threshold of " + Image + ": " + 0.5*(values[i+1] + values[i]));
+
+	return 0.5*(values[i+1] + values[i]);
+}
 
 function enhanceVisibility(Image, DAPIchannel, fociChannel){
 	selectWindow(Image);
@@ -369,19 +387,6 @@ function CellSeg(Input, channel) {
 	run("Watershed");
 
 	return "CellMask";
-}
-
-function removeIslands(Input, RSize){
-	// Remove sizes of size <RSize> from input image <Input>
-	// take care to use a threshold that only includes whole cells!
-	run("Analyze Particles...", "size=0-"+RSize+" pixel show=Masks");
-	run("Create Selection");
-	close();
-
-	selectWindow(Input);
-	run("Restore Selection");
-	run("Set...", "value=0");
-	run("Select None");
 }
 
 function selectForeground (Input){

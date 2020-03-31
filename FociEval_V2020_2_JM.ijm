@@ -164,7 +164,7 @@ for (i = 0; i < NCells; i++) {
 	if (selectionType() == -1) {
 		nFoci = 0;
 		mean = NaN;
-		stDev = NaN;
+		stdDev = NaN;
 	} else {
 		getSelectionCoordinates(x, y);
 		nFoci = x.length;

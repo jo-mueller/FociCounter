@@ -43,7 +43,7 @@
 saveImgs 		= true;
 measure_fSize 	= true;
 prominence 	= 2000.0; // determines how sensitive the peak finder is to smaller maxima
-CutOff  = 0.4; // value for relative cutoff (Cutoff * (Max - Min)) to determine foci area: 1 = full area, 0 = Zero Area, 0.5 = full area at half maximum
+CutOff  = 0.5; // value for relative cutoff (Cutoff * (Max - Min)) to determine foci area: 1 = full area, 0 = Zero Area, 0.5 = full area at half maximum
 
 ChFoci = 1; // which channel contains the foci staining?
 ChDAPI =2; // which channel contains the DAPI staining?

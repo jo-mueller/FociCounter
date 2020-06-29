@@ -38,7 +38,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
 // POSSIBILITY OF SUCH DAMAGE.
 //
-////////////////////////////////////////SETTINGS//////////////////////////////////////////////////////
+//////////////////////////////////////// DEFAULT SETTINGS//////////////////////////////////////////////////////
 
 saveImgs 		= true;
 measure_fSize 	= true;
@@ -52,6 +52,19 @@ Validation_mode = false; // set this to "true" if you only want to validate the 
 
 ////////////////////////////////////////START//////////////////////////////////////////////////////
 
+// Input GUI
+#@ File (label="Input image") filename;
+dir = File.getParent(filename);
+
+#@ Boolean (label="Save cell-wise images",  saveImgs=saveImgs) saveImgs;
+#@ Boolean (label="measure foci size",  measure_fSize=measure_fSize) measure_fSize;
+#@ Integer (label="Prominence", min=0, max=10000, value=prominence) prominence;
+#@ Float (label="Cutoff", min=0, max=1.0, value=CutOff) CutOff;
+
+#@ Integer (label="gH2AX channel", min=1, max=2, value=ChFoci) ChFoci;
+#@ Integer (label="DAPI channel", min=1, max=2, value=ChDAPI) ChDAPI;
+
+
 // Clean up
 run("Close All");
 roiManager("reset");
@@ -64,11 +77,7 @@ SegMap     = "SegMap";
 
 // Create Results table
 run("Table...", "name=[Measurements] width=800 height=600");
-print("[Measurements]", "\\Headings:Label \tArea \tN_Foci \tFSize_Mean \tFSize_Std");
-
-// File operations
-filename = File.openDialog("Pick your raw image");
-dir = File.getParent(filename);
+print("[Measurements]", "\\Headings:Label \tArea \tN_Foci	\tType \tFSize_Mean \tFSize_Std");
 
 // Load Data
 run("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
@@ -269,8 +278,23 @@ for (i = 0; i < NCells; i++) {
 		close();
 	}
 
-	// print results to table
-	print("[Measurements]", Cellname[i] +"\t" + SizeNucleus +"\t"+ nFoci+"\t" + mean +"\t"+ stdDev);
+	// print averaged results to table
+	print("[Measurements]", Cellname[i] +"\t" + 
+							SizeNucleus +"\t"+ 
+							nFoci+"\t" + 
+							"Average" + "\t" + 
+							mean +"\t"+ 
+							stdDev);
+
+	// print results for each foci in results file
+	for (f = 0; f < Foci_sizes.length; f++) {
+		print("[Measurements]", Cellname[i] +"\t" +
+								" " +"\t" +
+								" " +"\t" +
+								"Single" + "\t" +
+								Foci_sizes[f] +"\t"+
+								" ");
+	}
 }
 
 // When results are stored, add different ending to table.

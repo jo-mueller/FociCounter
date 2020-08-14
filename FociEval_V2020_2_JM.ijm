@@ -79,7 +79,8 @@ SegMap     = "SegMap";
 run("Table...", "name=[Measurements] width=800 height=600");
 print("[Measurements]", "\\Headings:Label \tArea \tN_Foci	\tType \tFSize_Mean \tFSize_Std");
 
-// Load Dataun("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+// Load Data
+run("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
 Image = File.nameWithoutExtension
 rename(Image);
 

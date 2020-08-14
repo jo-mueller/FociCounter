@@ -53,16 +53,16 @@ Validation_mode = false; // set this to "true" if you only want to validate the 
 ////////////////////////////////////////START//////////////////////////////////////////////////////
 
 // Input GUI
-#@ File (label="Input image") filename;
+#@ File (label="Input image") filename
 dir = File.getParent(filename);
 
-#@ Boolean (label="Save cell-wise images",  saveImgs=saveImgs) saveImgs;
-#@ Boolean (label="measure foci size",  measure_fSize=measure_fSize) measure_fSize;
-#@ Integer (label="Prominence", min=0, max=10000, value=prominence) prominence;
-#@ Float (label="Cutoff", min=0, max=1.0, value=CutOff) CutOff;
+#@ Boolean (label="Save cell-wise images",  saveImgs=saveImgs) saveImgs
+#@ Boolean (label="measure foci size",  measure_fSize=measure_fSize) measure_fSize
+#@ Integer (label="Prominence", min=0, max=10000, value=prominence) prominence
+#@ Float (label="Cutoff", min=0, max=1.0, value=CutOff) CutOff
 
-#@ Integer (label="gH2AX channel", min=1, max=2, value=ChFoci) ChFoci;
-#@ Integer (label="DAPI channel", min=1, max=2, value=ChDAPI) ChDAPI;
+#@ Integer (label="gH2AX channel", min=1, max=2, value=ChFoci) ChFoci
+#@ Integer (label="DAPI channel", min=1, max=2, value=ChDAPI) ChDAPI
 
 
 // Clean up
@@ -79,12 +79,11 @@ SegMap     = "SegMap";
 run("Table...", "name=[Measurements] width=800 height=600");
 print("[Measurements]", "\\Headings:Label \tArea \tN_Foci	\tType \tFSize_Mean \tFSize_Std");
 
-// Load Data
-run("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
-Image = File.nameWithoutExtension 
+// Load Dataun("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+Image = File.nameWithoutExtension
 rename(Image);
 
-savepath = File.getParent(filename) + "\\" + Image + "_results\\"
+savepath = File.getParent(filename) + "\\" + Image + "_results\\";
 File.makeDirectory(savepath);
 
 // Segment DAPI Nuclei
@@ -95,7 +94,6 @@ CellMask = CellSeg(Image, ChDAPI);
 selectForeground(CellMask);
 roiManager("Add");
 run("RGB Color");
-
 
 // Display as overlay to pick suitable cells/exclude dividing cells
 // Change LUT for visibility
@@ -113,13 +111,12 @@ run("8-bit");
 close(Image+" (RGB)");
 
 // Get selected cells
-setThreshold(1	, 244);
+setThreshold(1, 244);
 run("Convert to Mask");
 
 // Manage ROIs
 roiManager("reset");
 run("Analyze Particles...", "size=0-Infinity pixel show=Nothing add");
-
 
 nFoci = newArray(roiManager("count"));
 Cellname     = newArray(roiManager("count")); // Array for all the cell-ROIs
@@ -136,7 +133,7 @@ for (i = 0; i < NCells; i++) {
 	roiManager("select", i);
 	Cellname[i] = call("ij.plugin.frame.RoiManager.getName", i);
 	
-	// Measure the size		
+	// Measure the size
 	run("Measure");
 	SizeNucleus = getResult("Area", nResults()-1);
 
@@ -146,7 +143,7 @@ for (i = 0; i < NCells; i++) {
 	rename(Cellname[i]);
 	run("Add Slice", "add=slice");
 	run("Add Slice", "add=slice");
-	
+
 	// add 2nd channel (foci) to duplicate
 	selectWindow(Image);
 	setSlice(ChFoci);
@@ -178,10 +175,9 @@ for (i = 0; i < NCells; i++) {
 		nFoci = x.length;
 	}
 
-	
 	// This part measures the size of a foci
 	if (measure_fSize && nFoci > 0) {
-		selectWindow(Cellname[i]);		
+		selectWindow(Cellname[i]);
 
 		// get background
 		setSlice(3);
@@ -190,12 +186,12 @@ for (i = 0; i < NCells; i++) {
 		resetThreshold();
 		setSlice(2);
 //		BG = getPercentile(Cellname[i], 25);
-		
+
 
 		// Check the number of foci; If there's only one, particle segmentation fails.
 		if (nFoci > 1) {
 			run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Segmented Particles]");
-			run("Create Selection");		
+			run("Create Selection");
 			close();
 		} else {
 			run("Restore Selection");
@@ -235,7 +231,7 @@ for (i = 0; i < NCells; i++) {
 		for (j = NCells; j < roiManager("count"); j++) {
 			processPiece(Cellname[i], j, 2, CutOff, Validation_mode);			
 			run("Copy");
-			close();			
+			close();
 			selectWindow(Cellname[i]);
 			run("Paste");
 			resetThreshold();
@@ -245,7 +241,7 @@ for (i = 0; i < NCells; i++) {
 
 		// measure mean size/std of all foci
 		Array.getStatistics(Foci_sizes, min, max, mean, stdDev);
-		
+
 		// clean up ROI Manager: Keep Cell ROIs (0-NCells), remove puzzle piece ROIs (NCells - N)
 		N = roiManager("count");
 		for (j = NCells; j < N; j++) {
@@ -259,7 +255,7 @@ for (i = 0; i < NCells; i++) {
 		setSlice(2);
 		run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
 	}
-	
+
 	// If images of each cell should be stored (no matter how many foci).
 	if (saveImgs){
 		if (Validation_mode) {
@@ -273,7 +269,7 @@ for (i = 0; i < NCells; i++) {
 			rename(Cellname[i]);
 			close();
 		}
-		
+
 	} else {
 		close();
 	}
@@ -302,11 +298,11 @@ for (i = 0; i < NCells; i++) {
 if (Validation_mode) {
 	roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
 	selectWindow("Measurements");
-	saveAs("Measurements", savepath + "results_" + Image + "_valid.csv");	
+	saveAs("Measurements", savepath + "results_" + Image + "_valid.csv");
 } else {
 	roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
 	selectWindow("Measurements");
-	saveAs("Measurements", savepath + "results_" + Image + "_auto.csv");	
+	saveAs("Measurements", savepath + "results_" + Image + "_auto.csv");
 }
 
 run("Close All");
@@ -326,7 +322,7 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 	roiManager("Select", ROI);
 
 	// duplicate piece
-	run("Duplicate...", "duplicate"); 
+	run("Duplicate...", "duplicate");
 	rename("PuzzlePiece");
 	setSlice(Slice);
 
@@ -335,7 +331,7 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 	run("Measure");
 	Max = getResult("Max", nResults() -1);
 	BG = getPercentile("PuzzlePiece", 5);
-	
+
 	if (valid_mode == false) {
 		setThreshold(BG + p * (Max - BG), Max);
 		run("Convert to Mask", "background=Dark black");
@@ -381,7 +377,7 @@ function getPercentile(Image, perc){
 	i = 0;
 	do {
 		i = i+1;
-		c = c + counts[i];		
+		c = c + counts[i];
 	} while (c < perc/100 * total);
 
 	print(perc +"% threshold of " + Image + ": " + 0.5*(values[i+1] + values[i]));
@@ -418,4 +414,3 @@ function selectForeground (Input){
 	setThreshold(128, 100000);
 	run("Create Selection");
 }
-

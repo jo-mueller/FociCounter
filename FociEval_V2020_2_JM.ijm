@@ -39,7 +39,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////// DEFAULT SETTINGS//////////////////////////////////////////////////////
-
+/*
 saveImgs 		= true;
 measure_fSize 	= true;
 prominence 	= 2000.0; // determines how sensitive the peak finder is to smaller maxima
@@ -47,6 +47,7 @@ CutOff  = 0.5; // value for relative cutoff (Cutoff * (Max - Min)) to determine 
 
 ChFoci = 1; // which channel contains the foci staining?
 ChDAPI =2; // which channel contains the DAPI staining?
+*/
 
 Validation_mode = false; // set this to "true" if you only want to validate the foci sizes.
 
@@ -70,18 +71,22 @@ run("Close All");
 roiManager("reset");
 run("Clear Results");
 
+if (isOpen("Measurements")) {
+	close("Measurements");	
+}
+
 //Allocate arrays and set measurements
-run("Set Measurements...", "area min median display redirect=None decimal=2");
+run("Set Measurements...", "area min median center display redirect=None decimal=2");
 CellMask   = "CellMask";
 SegMap     = "SegMap";
 
 // Create Results table
 run("Table...", "name=[Measurements] width=800 height=600");
-print("[Measurements]", "\\Headings:Label \tArea \tN_Foci	\tType \tFSize_Mean \tFSize_Std");
+print("[Measurements]", "\\Headings:Label \tArea \tN_Foci \tType \tFSize_Mean \tFSize_Std \tMutualdistance");
 
 // Load Data
 run("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
-Image = File.nameWithoutExtension
+Image = File.nameWithoutExtension;
 rename(Image);
 
 savepath = File.getParent(filename) + "\\" + Image + "_results\\";
@@ -163,6 +168,7 @@ for (i = 0; i < NCells; i++) {
 	run("Set...", "value=100000 slice"); // this is a pseudo mask for the DAPI channel
 
 	// Actually measure number of foci
+	// The following part of the script is basically the re-evaluation (to be written)
 	setSlice(2);
 	run("Select None"); // remove selection so that selection type is recognized properly
 	run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
@@ -188,17 +194,24 @@ for (i = 0; i < NCells; i++) {
 		setSlice(2);
 //		BG = getPercentile(Cellname[i], 25);
 
-
-		// Check the number of foci; If there's only one, particle segmentation fails.
+		// Divide image in ROIs that contain one foci each.
+		// If there's only one foci, particle segmentation fails and the
+		// entire nucleus is considered as a single area of interest.
 		if (nFoci > 1) {
-			run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Segmented Particles]");
+			run("Find Maxima...", "prominence=" + prominence + " strict exclude output=[Segmented Particles]");
+			setThreshold(128, 255);  // make sure correct area is selected
 			run("Create Selection");
 			close();
 		} else {
 			run("Restore Selection");
 		}
 
-		// Add another channel to saveImg
+		/* 
+		 *  Add another channel to output image.
+		 *	Copy-paste segmented nucleus there
+		 *	Then project the foci-wise regions into this new slice 
+		*/
+		
 		selectWindow(Cellname[i]);
 		setSlice(3);
 		run("Copy");
@@ -206,14 +219,22 @@ for (i = 0; i < NCells; i++) {
 		run("Paste");
 		run("Restore Selection");
 
-		// divide the foci with zero-value pixels;
-		// This way, a part of the nucleus area can clearly be assigned to each foci.
-		// Within this separated "puzzle piece", the area of a foci can then be measured
+		/*
+		*	divide the binary nucleus area into separated regions with zero-value pixels;
+		*	This way, a part of the nucleus area can clearly be assigned to each foci.
+		*	Within this separated "puzzle piece", the area of a foci can then be measured
+		*/
 		if (nFoci > 1) {
-			run("Clear", "slice");
+			run("Clear Outside", "slice");
 		}
 		
-		// get area pieces: the ROIs of the pieces are added to the ROI manager (that already contains the cell ROIs)
+		/*
+		 * Select i-th cell (or cell subimage, respectively)
+		 * Select Foreground (union of all foci regions) and split these
+		 * into separate ROIs.
+		 * Remove the initial ROI (union of all pieces)
+		 */
+
 		selectWindow(Cellname[i]);
 		selectForeground(Cellname[i]);
 		roiManager("Add");
@@ -225,10 +246,15 @@ for (i = 0; i < NCells; i++) {
 		}
 		
 		Foci_sizes = newArray(nFoci);
+		Foci_x = newArray(nFoci);
+		Foci_y = newArray(nFoci);
 
-		// loop over pieces;
-		// The ROIs 0 - NCells belong to the cells.
-		// The ROIs NCells + 1 - NROIs are puzzle pieces.
+		/*
+		 * Iterate over all foci regions (a.k.a. puzzle pieces)
+		 * ROIs Nr. 0 - NCells are attributes of the previous cell segmentation
+		 * ROIs Nr. Ncells + 1 - NROIs are foci regions
+		 * Measure Area and other stuff of each foci
+		*/
 		for (j = NCells; j < roiManager("count"); j++) {
 			processPiece(Cellname[i], j, 2, CutOff, Validation_mode);			
 			run("Copy");
@@ -238,10 +264,15 @@ for (i = 0; i < NCells; i++) {
 			resetThreshold();
 			// store area of each foci
 			Foci_sizes[j-NCells] = getResult("Area", nResults() - 1);
+			Foci_x[j-NCells] = getResult("XM", nResults() - 1);
+			Foci_y[j-NCells] = getResult("YM", nResults() - 1);
 		}
 
 		// measure mean size/std of all foci
 		Array.getStatistics(Foci_sizes, min, max, mean, stdDev);
+
+		// Median distance of foci to its neighbours
+		MutDist = MutualDistance(Foci_x, Foci_y);
 
 		// clean up ROI Manager: Keep Cell ROIs (0-NCells), remove puzzle piece ROIs (NCells - N)
 		N = roiManager("count");
@@ -275,15 +306,16 @@ for (i = 0; i < NCells; i++) {
 		close();
 	}
 
-	// print averaged results to table
+	// print cell-averaged results to table
 	print("[Measurements]", Cellname[i] +"\t" + 
 							SizeNucleus +"\t"+ 
 							nFoci+"\t" + 
 							"Average" + "\t" + 
 							mean +"\t"+ 
-							stdDev);
+							stdDev + "\t" + 
+							MutDist);
 
-	// print results for each foci in results file
+	// print foci-wise results in results to table
 	for (f = 0; f < Foci_sizes.length; f++) {
 		print("[Measurements]", Cellname[i] +"\t" +
 								" " +"\t" +
@@ -309,6 +341,37 @@ if (Validation_mode) {
 run("Close All");
 selectWindow("Results");
 run("Close");
+
+function MutualDistance(X, Y){
+	/*
+	 * This function takes Vectors <x> and <y> with the center of mass
+	 * coordinates of measured foci. The euclidian distance of each foci
+	 * to all other foci is then measured. This gives and estimate
+	 * on how densely foci are present in the analyzed cell.
+	 */
+
+	N = X.length;
+	output = newArray();
+	
+	for (i = 0; i < N; i++) {
+		x = X[i];
+		y = Y[i];
+		for (j = 0; j < N; j++) {
+			_x = X[j];
+			_y = Y[j];
+			d = Math.sqrt( Math.pow(x - _x, 2) + Math.pow(y - _y, 2));	//euclidian distance between x and _x
+			print(d);
+			if(d > 0.001){
+				output = Array.concat(output, d); 	// append only non-zero result to array. In other words: ignore distance to self
+			}
+		}
+	}
+	
+	// get median distance and return
+	output = Array.sort(output);
+	Array.show(output);
+	return output[floor(output.length/2)];
+}
 
 function processPiece(Image, ROI, Slice, p, valid_mode){
 	// this function looks at a part of a cell that contains one (and only one) Foci

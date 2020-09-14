@@ -324,7 +324,6 @@ function MutualDistance(X, Y){
 	
 	// get median distance and return
 	output = Array.sort(output);
-	Array.show(output);
 	return output[floor(output.length/2)];
 }
 

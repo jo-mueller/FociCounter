@@ -45,6 +45,8 @@
 // Input GUI
 #@ File (label="Input Directory", style="directory") DataDir
 
+#@ Boolean (label="Save (new) images?",  saveImgs=saveImgs) saveImgs
+
 #@ Boolean (label="measure foci size",  measure_fSize=measure_fSize) measure_fSize
 #@ Integer (label="Prominence", min=0, max=10000, value=prominence) prominence
 #@ Float (label="Cutoff", min=0, max=1.0, value=CutOff) CutOff
@@ -59,11 +61,21 @@ run("Clear Results");
 if (isOpen("Measurements")) {
 	close("Measurements");	
 }
+
 run("Table...", "name=[Measurements] width=800 height=600");
 print("[Measurements]", "\\Headings:Label \tArea \tN_Foci \tType \tFSize_Mean \tFSize_Std \tMutualdistance");
 
 // Allocate variables and set measurements
 run("Set Measurements...", "area min median center display redirect=None decimal=2");
+
+// Create directory for new results
+Sample = split(DataDir, "\\");
+Sample = Sample[Sample.length - 1];
+NewOutDir = DataDir + "\\" + Sample + 
+			"_ReEval_CutOff" + d2s(CutOff*10, 0) + "_prominence" + d2s(prominence, 0) + "\\";
+if (!File.exists(NewOutDir)) {
+	File.makeDirectory(NewOutDir);
+}
 
 // get analyzed cell images
 Filelist = getFileList(DataDir);
@@ -194,6 +206,12 @@ for (i = 0; i < Filelist.length; i++) {
 		setSlice(2);
 		run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
 	}
+	
+	// If images of each cell should be stored (no matter how many foci).
+	if (saveImgs){
+		saveAs(".tif", NewOutDir + CellName);
+	}
+
 
 	// print cell-averaged results to table
 	print("[Measurements]", CellName +"\t" + 
@@ -214,6 +232,10 @@ for (i = 0; i < Filelist.length; i++) {
 								" ");
 	}
 }
+
+selectWindow("Measurements");
+saveAs("Measurements", NewOutDir + Sample + "_ReEval.csv");
+
 
 function processPiece(Image, ROI, Slice, p){
 	// this function looks at a part of a cell that contains one (and only one) Foci

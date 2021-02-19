@@ -53,30 +53,41 @@ Validation_mode = false; // set this to "true" if you only want to validate the 
 
 ////////////////////////////////////////START//////////////////////////////////////////////////////
 
-// Input GUI
-#@ File (label="Input image") filename
-dir = File.getParent(filename);
-
-#@ Boolean (label="Save cell-wise images",  saveImgs=saveImgs) saveImgs
-#@ Boolean (label="measure foci size",  measure_fSize=measure_fSize) measure_fSize
-#@ Integer (label="Prominence", min=0, max=10000, value=prominence) prominence
-#@ Float (label="Cutoff", min=0, max=1.0, value=CutOff) CutOff
-
-#@ Integer (label="gH2AX channel", min=1, max=2, value=ChFoci) ChFoci
-#@ Integer (label="DAPI channel", min=1, max=2, value=ChDAPI) ChDAPI
-
-
 // Clean up
 run("Close All");
 roiManager("reset");
 run("Clear Results");
+
+
+// Input GUI
+#@ File (label="Input image") filename
+
+#@ String (visibility=MESSAGE, value="Processing parameters", required=false) a
+#@ Integer (label="Foci prominence", min=0, max=1000, value=10) prominence
+#@ Float (label="Intensity cutoff", min=0, max=1.0, value=CutOff) CutOff
+
+#@ String (visibility=MESSAGE, value="Image parameters", required=false) aaa
+#@ Float (label="Pixel size (microns)", value=0.16), pixSize
+#@ Integer (label="gH2AX channel", min=1, max=3, value=ChFoci) ChFoci
+#@ Integer (label="DAPI channel", min=1, max=3, value=ChDAPI) ChDAPI
+
+#@ String (visibility=MESSAGE, value="Cell inclusion parameters", required=false) aa
+#@ Float (label="Minimal nucleus size (microns)", style="slider", min=0, max=100, stepSize=0.1, value = 30) min_size
+#@ Float (label="Brightness: lower percentile", style="slider", min=0, max=1, stepSize=0.01, value=0) lower_perc
+#@ Float (label="Brightness: upper percentile", style="slider", min=0, max=1, stepSize=0.01, value=1) upper_perc
+
+#@ Boolean (label="Save cell-wise images",  saveImgs=saveImgs) saveImgs
+
+
+dir = File.getParent(filename);
+
 
 if (isOpen("Measurements")) {
 	close("Measurements");	
 }
 
 //Allocate arrays and set measurements
-run("Set Measurements...", "area min median center display redirect=None decimal=2");
+run("Set Measurements...", "area mean min median center display redirect=None decimal=2");
 CellMask   = "CellMask";
 SegMap     = "SegMap";
 
@@ -92,52 +103,44 @@ rename(Image);
 savepath = File.getParent(filename) + "\\" + Image + "_results\\";
 File.makeDirectory(savepath);
 
-// Segment DAPI Nuclei
-setSlice(2);
-CellMask = CellSeg(Image, ChDAPI);
-
-// Get selection of segmented cells
-selectForeground(CellMask);
-roiManager("Add");
-run("RGB Color");
-
-// Display as overlay to pick suitable cells/exclude dividing cells
-// Change LUT for visibility
-enhanceVisibility(Image, ChDAPI, ChFoci);
-
-// Time for the user to do the work
-selectWindow(CellMask);
-run("Add Image...", "image=["+Image+" (RGB)] x=0 y=0 opacity=70");
-waitForUser("Use FloodFill Tool to mark well-segmented cells for analysis.");
-
-// Post-process result
-run("Remove Overlay");
-run("Select None");
-run("8-bit");
-close(Image+" (RGB)");
-
-// Get selected cells
-setThreshold(1, 244);
-run("Convert to Mask");
-
-// Manage ROIs
-roiManager("reset");
-run("Analyze Particles...", "size=0-Infinity pixel show=Nothing add");
-
-nFoci = newArray(roiManager("count"));
-Cellname     = newArray(roiManager("count")); // Array for all the cell-ROIs
-
-// Process selected cells
+// get datatype of Image
 selectWindow(Image);
-run("Gaussian Blur...", "sigma=1");
+bD = bitDepth();
+
+// is it an RGB image?
+if (bD == 24) {
+	run("Make Composite");
+	ChFoci = 2;
+	ChDAPI = 3;
+}
+
+// were pixelsizes set?
+getPixelSize(unit, pixelWidth, pixelHeight);
+if (unit == "inch") {
+	run("Set Scale...", "distance=1 known=" + pixSize + " unit=microns global");
+}
+
+CellSeg(Image, ChDAPI);  // segment DAPI image with Stardist 2D
+cleanROIs();  // remove cells that don't pass brightness/area criterion
+
+reply = getBoolean("This is your label map of segmented nuclei. Happy with it?");
+if (reply == 0) {
+	exit();	
+}
+
 
 NCells = roiManager("count");
+Cellname = newArray(roiManager("count"));  // this array stores the names of all rois for later ID
+
+// Process remaining nuclei
+selectWindow(Image);
+
 for (i = 0; i < NCells; i++) {
 	selectWindow(Image);
 	setSlice(ChDAPI);
 	
 	roiManager("select", i);
-	Cellname[i] = call("ij.plugin.frame.RoiManager.getName", i);
+	Cellname[i] = call("ij.plugin.frame.RoiManager.getName", i);  // add the name of this cell to the collection
 	
 	// Measure the size
 	run("Measure");
@@ -150,22 +153,21 @@ for (i = 0; i < NCells; i++) {
 	run("Add Slice", "add=slice");
 	run("Add Slice", "add=slice");
 
+
 	// add 2nd channel (foci) to duplicate
 	selectWindow(Image);
 	setSlice(ChFoci);
 	run("Copy");
+	run("Blue");
 	selectWindow(Cellname[i]);
 	setSlice(2);
 	run("Paste");
-
+	run("Green");
+	
 	// add 3rd channel (DAPI mask) to stack
-	selectWindow(CellMask);
-	roiManager("select", i);
-	run("Copy");
-	selectWindow(Cellname[i]);
 	setSlice(3);
-	run("Paste");
-	run("Set...", "value=100000 slice"); // this is a pseudo mask for the DAPI channel
+	run("Set...", "value=1 slice");
+	run("Grays");
 
 	// Actually measure number of foci
 	// The following part of the script is basically the re-evaluation (to be written)
@@ -173,6 +175,7 @@ for (i = 0; i < NCells; i++) {
 	run("Select None"); // remove selection so that selection type is recognized properly
 	run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
 	
+	// Store number of foci
 	if (selectionType() == -1) {
 		nFoci = 0;
 		mean = NaN;
@@ -182,8 +185,9 @@ for (i = 0; i < NCells; i++) {
 		nFoci = x.length;
 	}
 
+
 	// This part measures the size of a foci
-	if (measure_fSize && nFoci > 0) {
+	if (nFoci > 0) {
 		selectWindow(Cellname[i]);
 
 		// get background
@@ -192,6 +196,7 @@ for (i = 0; i < NCells; i++) {
 		run("Create Selection");
 		resetThreshold();
 		setSlice(2);
+
 //		BG = getPercentile(Cellname[i], 25);
 
 		// Divide image in ROIs that contain one foci each.
@@ -205,13 +210,8 @@ for (i = 0; i < NCells; i++) {
 		} else {
 			run("Restore Selection");
 		}
-
-		/* 
-		 *  Add another channel to output image.
-		 *	Copy-paste segmented nucleus there
-		 *	Then project the foci-wise regions into this new slice 
-		*/
 		
+		// Make a copy of DAPI mask and imprint segmented particles (aka foci ROIs) in this mask
 		selectWindow(Cellname[i]);
 		setSlice(3);
 		run("Copy");
@@ -229,10 +229,9 @@ for (i = 0; i < NCells; i++) {
 		}
 		
 		/*
-		 * Select i-th cell (or cell subimage, respectively)
-		 * Select Foreground (union of all foci regions) and split these
-		 * into separate ROIs.
-		 * Remove the initial ROI (union of all pieces)
+		 * Select i-th cell that's currently analyzed (or cell subimage, respectively)
+		 * Select Foreground (union of now clearly separated foci regions) and split into separate ROIs.
+		 * Remove the initial ROI (union of all pieces) so that only the puzzle pieces remain
 		 */
 
 		selectWindow(Cellname[i]);
@@ -352,7 +351,13 @@ function MutualDistance(X, Y){
 
 	N = X.length;
 	output = newArray();
-	
+
+	// if there's only one foci, this measurement makes no sense
+	if (N == 1) {
+		return NaN;
+	}
+
+	// otherwise, iterate over coordinates
 	for (i = 0; i < N; i++) {
 		x = X[i];
 		y = Y[i];
@@ -369,7 +374,6 @@ function MutualDistance(X, Y){
 	
 	// get median distance and return
 	output = Array.sort(output);
-	Array.show(output);
 	return output[floor(output.length/2)];
 }
 
@@ -420,6 +424,14 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 		run("Measure");
 		run("Select None");
 	}
+}
+
+function PercOfArray(my_array, perc){
+	// returns a percentile of a numeric vector <my_array>
+	my_array = Array.sort(my_array);
+	index = floor(perc * (my_array.length -1));
+
+	return my_array[index];
 }
 
 function getPercentile(Image, perc){
@@ -475,6 +487,82 @@ function CellSeg(Input, channel) {
 
 function selectForeground (Input){
 	selectWindow(Input);
-	setThreshold(128, 100000);
+	setThreshold(1, 100000);
 	run("Create Selection");
+}
+
+function CellSeg(Image, ChDAPI){
+	// run StarDist
+
+	print(ChDAPI);
+
+	selectWindow(Image);
+	setSlice(ChDAPI);
+	run("Duplicate...", "title=DAPI");
+	run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], " +
+			"args=['input':'DAPI', "+
+			"'modelChoice':'Versatile (fluorescent nuclei)', "+
+			"'normalizeInput':'true', "+
+			"'percentileBottom':'5.0', "+
+			"'percentileTop':'97.30000000000001', "+
+			"'probThresh':'0.3500000000000002', "+
+			"'nmsThresh':'0.4', "+
+			"'outputType':'Both', "+
+			"'nTiles':'1', "+
+			"'excludeBoundary':'15', "+
+			"'roiPosition':'Automatic', "+
+			"'verbose':'false', "+
+			"'showCsbdeepProgress':'false', "+
+			"'showProbAndDist':'false'], "+
+			"process=[false]");
+}
+
+function cleanROIs(){
+	NCells = roiManager("count");
+
+	
+	// convert Measurements to arrays
+	roiManager("Measure");
+	NucleiSizes = newArray(NCells);
+	NucleiBrightness = newArray(NCells);
+	for (i = 0; i < NCells; i++) {
+		NucleiSizes[i] = getResult("Area", i);
+		NucleiBrightness[i] = getResult("Mean", i);
+	}
+
+	// filter ROI list according to cell inclusion parameters
+	lower_brightness = PercOfArray(NucleiBrightness, lower_perc);
+	upper_brightness = PercOfArray(NucleiBrightness, upper_perc);
+	run("Clear Results");
+
+	selectWindow("Label Image");
+
+	to_be_removed = newArray();
+	// remove bad ROIs from list
+	for (i = 0; i < NCells; i++) {
+		roiManager("select", i);
+		roiManager("measure");
+		area = getResult("Area", nResults - 1);
+		mean_brightness = getResult("Mean", nResults - 1);
+
+		// Is the brightness of this nucleus outside specified range?
+		if ((mean_brightness < lower_brightness) || (mean_brightness > upper_brightness)) {
+			to_be_removed = Array.concat(to_be_removed, i);
+			print("brightness wrong!");
+			run("Clear");
+		}
+
+		// Is the area of this nucleus too small?
+		if (area < min_size) {
+			to_be_removed = Array.concat(to_be_removed, i);
+			print("too small!");
+			run("Clear");
+		}
+	}
+
+	// remove from ROI Manager
+	roiManager("select", to_be_removed);
+	roiManager("delete");
+	run("Clear Results");
+	
 }

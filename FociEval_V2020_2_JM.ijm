@@ -39,16 +39,6 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 //////////////////////////////////////// DEFAULT SETTINGS//////////////////////////////////////////////////////
-/*
-saveImgs 		= true;
-measure_fSize 	= true;
-prominence 	= 2000.0; // determines how sensitive the peak finder is to smaller maxima
-CutOff  = 0.5; // value for relative cutoff (Cutoff * (Max - Min)) to determine foci area: 1 = full area, 0 = Zero Area, 0.5 = full area at half maximum
-
-ChFoci = 1; // which channel contains the foci staining?
-ChDAPI =2; // which channel contains the DAPI staining?
-*/
-
 Validation_mode = false; // set this to "true" if you only want to validate the foci sizes.
 
 ////////////////////////////////////////START//////////////////////////////////////////////////////
@@ -116,7 +106,7 @@ if (bD == 24) {
 
 // were pixelsizes set?
 getPixelSize(unit, pixelWidth, pixelHeight);
-if (unit == "inch") {
+if (unit == "inch" || pixelWidth > 100) {
 	run("Set Scale...", "distance=1 known=" + pixSize + " unit=microns global");
 }
 

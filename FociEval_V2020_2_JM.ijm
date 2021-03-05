@@ -95,7 +95,8 @@ print("[Measurements_single]", "\\Headings:Filename\tNucleusLabel \tArea  \tFSiz
 
 //--------------------MAIN------------------
 
-t0 = getTime();
+T0 = getTime();
+times = newArray();
 
 // First: Check if the selected file is a directory or a single image
 if (File.isDirectory(filename)) {
@@ -110,18 +111,26 @@ if (File.isDirectory(filename)) {
 	// If it's a directory: Iterate over all images
 	images = getFileList(directory);
 	images = selectImagesFromFileList(images, "tif");
-	process_Main(directory, savepath);
+	for (i = 0; i < images.length; i++) {
+		t0 = getTime();
+		roiManager("reset");
+		run("Clear Results");
+		process_Main(directory + images[i], savepath);
+		times = Array.concat(times, getTime() - t0);
+	}	
 } else {
 	// create savedir
 	savepath = File.makeDirectory(File.getParent(filename) + "/" + File.getNameWithoutExtension(filename) + "_results/");
 
 	// If it's a file: Process only this one
+	t0 = getTime();
 	process_Main(filename, savepath);
+	times = Array.concat(times, getTime() - t0);
 }
 
-t1 = getTime();
-dt = t1 - t0;
-print("Macro finished in " + dt/1000 + "s." );
+Array.getStatistics(times, min, max, mean, stdDev);
+dt = getTime() - T0;
+print("Macro finished in " + dt/1000 + "s. Time per image: " + mean/1000 + "s");
 
 //--------------------SUBFUNCTIONS------------------
 

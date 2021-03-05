@@ -120,7 +120,9 @@ if (File.isDirectory(filename)) {
 	}	
 } else {
 	// create savedir
-	savepath = File.makeDirectory(File.getParent(filename) + "/" + File.getNameWithoutExtension(filename) + "_results/");
+	savepath = File.getParent(filename) + "/" + File.getNameWithoutExtension(filename) + "_results/";
+	File.makeDirectory(savepath);
+	print(savepath);
 
 	// If it's a file: Process only this one
 	t0 = getTime();
@@ -264,12 +266,13 @@ function process_Main(fname, savepath){
 	
 		
 	}
-	/*
+
+/*
 	saveAs("Measurements_single", savepath + "results_" + Image + "_auto.csv");
 	saveAs("Measurements_avg", savepath + "results_" + Image + "_auto.csv");
 	roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
-	*/
-	/*
+*/
+
 	// When results are stored, add different ending to table.
 	// Otherwise, original measurements would be overwritten in valid mode.
 	if (Validation_mode) {
@@ -279,9 +282,10 @@ function process_Main(fname, savepath){
 	} else {
 		roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
 		selectWindow("Measurements_single");
-		saveAs("Measurements_single", savepath + "results_" + Image + "_auto.csv");
+		saveAs("Measurements_single", savepath + "results_" + Image + "_auto_single.csv");
+		selectWindow("Measurements_avg");
+		saveAs("Measurements_avg", savepath + "results_" + Image + "_auto_avg.csv");
 	}
-	*/	
 }
 
 

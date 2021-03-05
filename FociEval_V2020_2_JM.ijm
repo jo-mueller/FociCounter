@@ -160,8 +160,11 @@ function process_Main(fname, savepath){
 	getPixelSize(unit, pixelWidth, pixelHeight);
 	if (unit == "inch" || pixelWidth > 100) {
 		run("Set Scale...", "distance=1 known=" + pixSize + " unit=microns global");
-		boundary_exclusion = floor(boundary_exclusion/pixSize);  // convert this into pixel units and make global
+	} else {
+		getPixelSize(unit, pixelWidth, pixelHeight);
+		run("Set Scale...", "distance=1 known=" + pixSize + " unit=microns global");
 	}
+	boundary_exclusion = floor(boundary_exclusion/pixelWidth);  // convert this into pixel units and make global
 
 	//--------------------Actual processing-------------------
 	// Nucleus segmentation 

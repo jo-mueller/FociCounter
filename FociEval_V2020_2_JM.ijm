@@ -43,6 +43,7 @@ Validation_mode = false; // set this to "true" if you only want to validate the 
 
 ////////////////////////////////////////START//////////////////////////////////////////////////////
 
+//--------------------CONFIG------------------
 // Clean up
 run("Close All");
 roiManager("reset");
@@ -50,291 +51,347 @@ run("Clear Results");
 
 
 // Input GUI
-#@ File (label="Input image") filename
+#@ File (label="Input image", style="both") filename
 
 #@ String (visibility=MESSAGE, value="Processing parameters", required=false) a
 #@ Integer (label="Foci prominence", min=0, max=1000, value=10) prominence
 #@ Float (label="Intensity cutoff", min=0, max=1.0, value=CutOff) CutOff
 
 #@ String (visibility=MESSAGE, value="Image parameters", required=false) aaa
-#@ Float (label="Pixel size (microns)", value=0.16), pixSize
+#@ Float (label="Pixel size (µm)", value=0.16) pixSize
 #@ Integer (label="gH2AX channel", min=1, max=3, value=ChFoci) ChFoci
 #@ Integer (label="DAPI channel", min=1, max=3, value=ChDAPI) ChDAPI
 
 #@ String (visibility=MESSAGE, value="Cell inclusion parameters", required=false) aa
-#@ Float (label="Minimal nucleus size (microns)", style="slider", min=0, max=100, stepSize=0.1, value = 30) min_size
-#@ Float (label="Brightness: lower percentile", style="slider", min=0, max=1, stepSize=0.01, value=0) lower_perc
-#@ Float (label="Brightness: upper percentile", style="slider", min=0, max=1, stepSize=0.01, value=1) upper_perc
+#@ Float (label="Minimal nucleus size (µm)", style="slider", min=0, max=100, stepSize=0.1, value=30) min_size
+#@ Float (label="Foci Brightness: lower percentile", style="slider", min=0, max=1, stepSize=0.01, value=0) lower_perc
+#@ Float (label="Foci Brightness: upper percentile", style="slider", min=0, max=1, stepSize=0.01, value=0.98) upper_perc
+#@ Float (label="Bundary exclusion radius (µm)", min=0, max=100, value=25) boundary_exclusion
 
+#@ Boolean (label="Batch mode",  useBatch=useBatch, value=true) useBatch
 #@ Boolean (label="Save cell-wise images",  saveImgs=saveImgs) saveImgs
 
+// close old tables
+if (isOpen("Measurements_single")) {
+	close("Measurements_single");	
+}
+if (isOpen("Measurements_avg")) {
+	close("Measurements_avg");	
+}
 
-dir = File.getParent(filename);
-
-
-if (isOpen("Measurements")) {
-	close("Measurements");	
+if (useBatch) {
+	setBatchMode(true);
 }
 
 //Allocate arrays and set measurements
 run("Set Measurements...", "area mean min median center display redirect=None decimal=2");
-CellMask   = "CellMask";
-SegMap     = "SegMap";
 
-// Create Results table
-run("Table...", "name=[Measurements] width=800 height=600");
-print("[Measurements]", "\\Headings:Label \tArea \tN_Foci \tType \tFSize_Mean \tFSize_Std \tMutualdistance");
-
-// Load Data
-run("Bio-Formats (Windowless)", "open=["+filename+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
-Image = File.nameWithoutExtension;
-rename(Image);
-
-savepath = File.getParent(filename) + "\\" + Image + "_results\\";
-File.makeDirectory(savepath);
-
-// get datatype of Image
-selectWindow(Image);
-bD = bitDepth();
-
-// is it an RGB image?
-if (bD == 24) {
-	run("Make Composite");
-	ChFoci = 2;
-	ChDAPI = 3;
-}
-
-// were pixelsizes set?
-getPixelSize(unit, pixelWidth, pixelHeight);
-if (unit == "inch" || pixelWidth > 100) {
-	run("Set Scale...", "distance=1 known=" + pixSize + " unit=microns global");
-}
-
-CellSeg(Image, ChDAPI);  // segment DAPI image with Stardist 2D
-cleanROIs();  // remove cells that don't pass brightness/area criterion
-
-reply = getBoolean("This is your label map of segmented nuclei. Happy with it?");
-if (reply == 0) {
-	exit();	
-}
+// Create Results tables
+run("Table...", "name=[Measurements_avg] width=800 height=600");
+print("[Measurements_avg]", "\\Headings:Filename\tNucleusLabel \tArea \tN_Foci \tFSize_Mean \tFSize_Std \tMutualdistance");
+run("Table...", "name=[Measurements_single] width=800 height=600");
+print("[Measurements_single]", "\\Headings:Filename\tNucleusLabel \tArea  \tFSize");
 
 
-NCells = roiManager("count");
-Cellname = newArray(roiManager("count"));  // this array stores the names of all rois for later ID
+//--------------------MAIN------------------
 
-// Process remaining nuclei
-selectWindow(Image);
+t0 = getTime();
 
-for (i = 0; i < NCells; i++) {
-	selectWindow(Image);
-	setSlice(ChDAPI);
-	
-	roiManager("select", i);
-	Cellname[i] = call("ij.plugin.frame.RoiManager.getName", i);  // add the name of this cell to the collection
-	
-	// Measure the size
-	run("Measure");
-	SizeNucleus = getResult("Area", nResults()-1);
+// First: Check if the selected file is a directory or a single image
+if (File.isDirectory(filename)) {
+	directory = filename + "/";
 
-	// A duplicate of the cell is created here. Can be saved, or discarded (see option above)
-	// add first channel to duplicate. This is done channelwise to avoid channel/slice/timepoint confusion
-	run("Duplicate...", " ");
-	rename(Cellname[i]);
-	run("Add Slice", "add=slice");
-	run("Add Slice", "add=slice");
+	// create savedir
+	parent_dir = split(filename, File.separator);
+	parent_dir = parent_dir[parent_dir.length -1];
+	savepath = directory + parent_dir + "_results/";
+	File.makeDirectory(savepath);
 
-
-	// add 2nd channel (foci) to duplicate
-	selectWindow(Image);
-	setSlice(ChFoci);
-	run("Copy");
-	run("Blue");
-	selectWindow(Cellname[i]);
-	setSlice(2);
-	run("Paste");
-	run("Green");
-	
-	// add 3rd channel (DAPI mask) to stack
-	setSlice(3);
-	run("Set...", "value=1 slice");
-	run("Grays");
-
-	// Actually measure number of foci
-	// The following part of the script is basically the re-evaluation (to be written)
-	setSlice(2);
-	run("Select None"); // remove selection so that selection type is recognized properly
-	run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
-	
-	// Store number of foci
-	if (selectionType() == -1) {
-		nFoci = 0;
-		mean = NaN;
-		stdDev = NaN;
-	} else {
-		getSelectionCoordinates(x, y);
-		nFoci = x.length;
-	}
-
-
-	// This part measures the size of a foci
-	if (nFoci > 0) {
-		selectWindow(Cellname[i]);
-
-		// get background
-		setSlice(3);
-		selectForeground(Cellname[i]);
-		run("Create Selection");
-		resetThreshold();
-		setSlice(2);
-
-//		BG = getPercentile(Cellname[i], 25);
-
-		// Divide image in ROIs that contain one foci each.
-		// If there's only one foci, particle segmentation fails and the
-		// entire nucleus is considered as a single area of interest.
-		if (nFoci > 1) {
-			run("Find Maxima...", "prominence=" + prominence + " strict exclude output=[Segmented Particles]");
-			setThreshold(128, 255);  // make sure correct area is selected
-			run("Create Selection");
-			close();
-		} else {
-			run("Restore Selection");
-		}
-		
-		// Make a copy of DAPI mask and imprint segmented particles (aka foci ROIs) in this mask
-		selectWindow(Cellname[i]);
-		setSlice(3);
-		run("Copy");
-		run("Add Slice", "add=slice");
-		run("Paste");
-		run("Restore Selection");
-
-		/*
-		*	divide the binary nucleus area into separated regions with zero-value pixels;
-		*	This way, a part of the nucleus area can clearly be assigned to each foci.
-		*	Within this separated "puzzle piece", the area of a foci can then be measured
-		*/
-		if (nFoci > 1) {
-			run("Clear Outside", "slice");
-		}
-		
-		/*
-		 * Select i-th cell that's currently analyzed (or cell subimage, respectively)
-		 * Select Foreground (union of now clearly separated foci regions) and split into separate ROIs.
-		 * Remove the initial ROI (union of all pieces) so that only the puzzle pieces remain
-		 */
-
-		selectWindow(Cellname[i]);
-		selectForeground(Cellname[i]);
-		roiManager("Add");
-		roiManager("Select", roiManager("count")-1);
-		if (nFoci > 1) {
-			roiManager("Split");
-			roiManager("Select", NCells); // delete selection that wasn't split
-			roiManager("Delete");
-		}
-		
-		Foci_sizes = newArray(nFoci);
-		Foci_x = newArray(nFoci);
-		Foci_y = newArray(nFoci);
-
-		/*
-		 * Iterate over all foci regions (a.k.a. puzzle pieces)
-		 * ROIs Nr. 0 - NCells are attributes of the previous cell segmentation
-		 * ROIs Nr. Ncells + 1 - NROIs are foci regions
-		 * Measure Area and other stuff of each foci
-		*/
-		for (j = NCells; j < roiManager("count"); j++) {
-			processPiece(Cellname[i], j, 2, CutOff, Validation_mode);			
-			run("Copy");
-			close();
-			selectWindow(Cellname[i]);
-			run("Paste");
-			resetThreshold();
-			// store area of each foci
-			Foci_sizes[j-NCells] = getResult("Area", nResults() - 1);
-			Foci_x[j-NCells] = getResult("XM", nResults() - 1);
-			Foci_y[j-NCells] = getResult("YM", nResults() - 1);
-		}
-
-		// measure mean size/std of all foci
-		Array.getStatistics(Foci_sizes, min, max, mean, stdDev);
-
-		// Median distance of foci to its neighbours
-		MutDist = MutualDistance(Foci_x, Foci_y);
-
-		// clean up ROI Manager: Keep Cell ROIs (0-NCells), remove puzzle piece ROIs (NCells - N)
-		N = roiManager("count");
-		for (j = NCells; j < N; j++) {
-			roiManager("Select", NCells); // delete selection that wasn't split
-			roiManager("Delete");
-		}
-
-		// do the point selection again so that images can be stored with the point selection.
-		// May be easier for later introspection.
-		resetThreshold();
-		setSlice(2);
-		run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
-	}
-
-	// If images of each cell should be stored (no matter how many foci).
-	if (saveImgs){
-		if (Validation_mode) {
-			// If data comes from validation mode, add this to the filename.
-			saveAs(".tif", savepath + Cellname[i] + "_valid");
-			rename(Cellname[i]);
-			close();
-		} else {
-			// If data comes from automated analysis, specify this in the file name
-			saveAs(".tif", savepath + Cellname[i] + "_auto");
-			rename(Cellname[i]);
-			close();
-		}
-
-	} else {
-		close();
-	}
-
-	// print cell-averaged results to table
-	print("[Measurements]", Cellname[i] +"\t" + 
-							SizeNucleus +"\t"+ 
-							nFoci+"\t" + 
-							"Average" + "\t" + 
-							mean +"\t"+ 
-							stdDev + "\t" + 
-							MutDist);
-
-	// print foci-wise results in results to table
-	for (f = 0; f < Foci_sizes.length; f++) {
-		print("[Measurements]", Cellname[i] +"\t" +
-								" " +"\t" +
-								" " +"\t" +
-								"Single" + "\t" +
-								Foci_sizes[f] +"\t"+
-								" ");
-	}
-}
-
-// When results are stored, add different ending to table.
-// Otherwise, original measurements would be overwritten in valid mode.
-if (Validation_mode) {
-	roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
-	selectWindow("Measurements");
-	saveAs("Measurements", savepath + "results_" + Image + "_valid.csv");
+	// If it's a directory: Iterate over all images
+	images = getFileList(directory);
+	images = selectImagesFromFileList(images, "tif");
+	process_Main(directory, savepath);
 } else {
-	roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
-	selectWindow("Measurements");
-	saveAs("Measurements", savepath + "results_" + Image + "_auto.csv");
+	// create savedir
+	savepath = File.makeDirectory(File.getParent(filename) + "/" + File.getNameWithoutExtension(filename) + "_results/");
+
+	// If it's a file: Process only this one
+	process_Main(filename, savepath);
 }
+
+t1 = getTime();
+dt = t1 - t0;
+print("Macro finished in " + dt/1000 + "s." );
+
+//--------------------SUBFUNCTIONS------------------
+
+function process_Main(fname, savepath){
+	/*
+	 * Main function for the processing of a single image.
+	 */
+
+	// Load Data
+	run("Bio-Formats (Windowless)", "open=["+fname+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+	Image = File.nameWithoutExtension;
+	rename(Image);
+
+	//--------------------Preprocess and settings-------------------
+	// get datatype of Image
+	selectWindow(Image);
+	bD = bitDepth();
+	
+	// is it an RGB image?
+	if (bD == 24) {
+		run("Make Composite");
+		ChFoci = 2;
+		ChDAPI = 3;
+	}
+
+	// were pixelsizes set?
+	getPixelSize(unit, pixelWidth, pixelHeight);
+	if (unit == "inch" || pixelWidth > 100) {
+		run("Set Scale...", "distance=1 known=" + pixSize + " unit=microns global");
+		boundary_exclusion = floor(boundary_exclusion/pixSize);  // convert this into pixel units and make global
+	}
+
+	//--------------------Actual processing-------------------
+	// Nucleus segmentation 
+	labelimg = CellSeg(Image, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
+	cleanROIs(Image, ChFoci, labelimg);  // remove cells that don't pass brightness/area criterion
+
+	if (!useBatch) {
+		// to do: make introspection optional
+		reply = getBoolean("This is your label map of segmented nuclei. Happy with it?");
+		if (reply == 0) {
+			exit();	
+		}
+	}
+	
+
+	// Cell counting and measurement setup
+	NCells = roiManager("count");
+	Cellname = newArray(roiManager("count"));  // this array stores the names of all rois for later ID
+	
+	// Iterate over nuclei
+	selectWindow(Image);
+	for (i = 0; i < NCells; i++) {
+		selectWindow(Image);
+		setSlice(ChDAPI);
+		
+		roiManager("select", i);
+		Cellname[i] = call("ij.plugin.frame.RoiManager.getName", i);  // add the name of this cell to the collection
+		
+		
+		// Measure the size
+		run("Measure");
+		SizeNucleus = getResult("Area", nResults()-1);
+	
+		// A duplicate of the cell is created here. Can be saved, or discarded (see option above)
+		// add first channel to duplicate. This is done channelwise to avoid channel/slice/timepoint confusion
+		run("Duplicate...", " ");
+		rename(Cellname[i]);
+		run("Add Slice", "add=slice");
+		run("Add Slice", "add=slice");
+	
+	
+		// add 2nd channel (foci) to duplicate
+		selectWindow(Image);
+		setSlice(ChFoci);
+		run("Copy");
+		run("Blue");
+		selectWindow(Cellname[i]);
+		setSlice(2);
+		run("Paste");
+		run("Green");
+		
+		// add 3rd channel (DAPI mask) to stack
+		setSlice(3);
+		run("Set...", "value=1 slice");
+		run("Grays");
+	
+		// Actually measure number of foci
+		// The following part of the script is basically the re-evaluation (to be written)
+		setSlice(2);
+		run("Enlarge...", "enlarge=-1 pixel");  // make ROI a little smaller to exclude edge maxima
+		run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
+		
+		// Store number of foci
+		if (selectionType() != 10) {
+			nFoci = 0;
+			mean = NaN;
+			stdDev = NaN;
+		} else {
+			getSelectionCoordinates(x, y);
+			nFoci = x.length;
+		}
+	
+		// This part measures the size of the foci
+		if (nFoci > 0) {
+			process_Nucleus(Cellname[i], nFoci, NCells);
+		}
+	
+		// If images of each cell should be stored (no matter how many foci).
+		if (saveImgs){
+			if (Validation_mode) {
+				// If data comes from validation mode, add this to the filename.
+				saveAs(".tif", savepath + Cellname[i] + "_valid");
+				rename(Cellname[i]);
+				close();
+			} else {
+				// If data comes from automated analysis, specify this in the file name
+				saveAs(".tif", savepath + Cellname[i] + "_auto");
+				rename(Cellname[i]);
+				close();
+			}
+	
+		} else {
+			close();
+		}
+	
+		
+	}
+	
+	// When results are stored, add different ending to table.
+	// Otherwise, original measurements would be overwritten in valid mode.
+	if (Validation_mode) {
+		roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
+		selectWindow("Measurements_avg");
+		saveAs("Measurements_avg", savepath + "results_" + Image + "_valid.csv");
+	} else {
+		roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
+		selectWindow("Measurements_single");
+		saveAs("Measurements_single", savepath + "results_" + Image + "_auto.csv");
+	}	
+}
+
+
 
 run("Close All");
 selectWindow("Results");
 run("Close");
 
+function process_Nucleus(image, nFoci, NCells){
+	selectWindow(image);
+
+	// get background
+	setSlice(3);
+	selectForeground(image);
+	run("Create Selection");
+	resetThreshold();
+	setSlice(2);	
+
+	// Divide image in ROIs that contain one foci each.
+	// If there's only one foci, particle segmentation fails and the
+	// entire nucleus is considered as a single area of interest.
+	if (nFoci > 1) {
+		run("Find Maxima...", "prominence=" + prominence + " strict exclude output=[Segmented Particles]");
+		setThreshold(128, 255);  // make sure correct area is selected
+		run("Create Selection");
+		close();
+	} else {
+		run("Restore Selection");
+	}
+	
+	// Make a copy of DAPI mask and imprint segmented particles (aka foci ROIs) in this mask
+	selectWindow(image);
+	setSlice(3);
+	run("Copy");
+	run("Add Slice", "add=slice");
+	run("Paste");
+	run("Restore Selection");
+
+	/*
+	*	divide the binary nucleus area into separated regions with zero-value pixels;
+	*	This way, a part of the nucleus area can clearly be assigned to each foci.
+	*	Within this separated "puzzle piece", the area of a foci can then be measured
+	*/
+	if (nFoci > 1) {
+		run("Clear Outside", "slice");
+	}
+	
+	/*
+	 * Select i-th cell that's currently analyzed (or cell subimage, respectively)
+	 * Select Foreground (union of now clearly separated foci regions) and split into separate ROIs.
+	 * Remove the initial ROI (union of all pieces) so that only the puzzle pieces remain
+	 */
+
+	selectWindow(image);
+	selectForeground(image);
+	roiManager("Add");
+	roiManager("Select", roiManager("count")-1);
+	if (nFoci > 1) {
+		roiManager("Split");
+		roiManager("Select", NCells); // delete selection that wasn't split
+		roiManager("Delete");
+	}
+	
+	Foci_sizes = newArray(nFoci);
+	Foci_x = newArray(nFoci);
+	Foci_y = newArray(nFoci);
+
+	/*
+	 * Iterate over all foci regions (a.k.a. puzzle pieces)
+	 * ROIs Nr. 0 - NCells are attributes of the previous cell segmentation
+	 * ROIs Nr. Ncells + 1 - NROIs are foci regions
+	 * Measure Area and other stuff of each foci
+	*/
+	
+	for (j = 0; j < nFoci; j++) {
+		processPiece(image, j+NCells, 2, CutOff, Validation_mode);
+		run("Copy");
+		close();
+		selectWindow(image);
+		run("Paste");
+		resetThreshold();
+		// store area of each foci
+		Foci_sizes[j] = getResult("Area", nResults() - 1);
+		Foci_x[j] = getResult("XM", nResults() - 1);
+		Foci_y[j] = getResult("YM", nResults() - 1);
+	}
+
+	// measure mean size/std of all foci
+	Array.getStatistics(Foci_sizes, min, max, mean, stdDev);
+
+	// Median distance of foci to its neighbours
+	MutDist = MutualDistance(Foci_x, Foci_y);
+
+	// clean up ROI Manager: Keep Cell ROIs (0-NCells), remove puzzle piece ROIs (NCells - N)
+	do {
+		roiManager("select", roiManager("count") - 1);
+		roiManager("Delete");
+	} while (roiManager("count") > NCells);
+
+
+	// do the point selection again so that images can be stored with the point selection.
+	// May be easier for later introspection.
+	resetThreshold();
+	setSlice(2);
+	run("Find Maxima...", "prominence="+prominence+" strict exclude output=[Point Selection]");
+	
+	// print cell-averaged results to table
+	//print("[Measurements_avg]", "\\Headings:Filename\tNucleusLabel \tArea \tN_Foci \tFSize_Mean \tFSize_Std \tMutualdistance");
+	print("[Measurements_avg]", fname + "\t" + 			// Filename
+								Cellname[i] +"\t" +  	// Nucleus label 
+								SizeNucleus +"\t"+   	// Nucleus area
+								nFoci+"\t" +   			// Foci number
+								mean +"\t"+   			// Mean Foci Size
+								stdDev + "\t" +  		// std deviation of foci size
+								MutDist);				// Mutual Distance of foci
+
+	// write foci-wise results to table
+	// print("[Measurements_single]", "\\Headings:Filename\tNucleusLabel \tArea  \tFSize");
+	for (f = 0; f < Foci_sizes.length; f++) {
+		print("[Measurements_single]", 	fname +"\t" +			//Filename
+										Cellname[i] +"\t" +		// Nucleus Label
+										SizeNucleus + "\t" + 	// Size of respective nucleus
+										Foci_sizes[f]);    		// Size of this foci
+	}
+}
+
 function MutualDistance(X, Y){
 	/*
-	 * This function takes Vectors <x> and <y> with the center of mass
-	 * coordinates of measured foci. The euclidian distance of each foci
+	 * This function takes Vectors <x> and <y> that represent the center of mass
+	 * coordinates of each measured foci. The euclidian distance of each foci
 	 * to all other foci is then measured. This gives and estimate
 	 * on how densely foci are present in the analyzed cell.
 	 */
@@ -355,7 +412,6 @@ function MutualDistance(X, Y){
 			_x = X[j];
 			_y = Y[j];
 			d = Math.sqrt( Math.pow(x - _x, 2) + Math.pow(y - _y, 2));	//euclidian distance between x and _x
-			print(d);
 			if(d > 0.001){
 				output = Array.concat(output, d); 	// append only non-zero result to array. In other words: ignore distance to self
 			}
@@ -446,7 +502,7 @@ function getPercentile(Image, perc){
 		c = c + counts[i];
 	} while (c < perc/100 * total);
 
-	print(perc +"% threshold of " + Image + ": " + 0.5*(values[i+1] + values[i]));
+	//print(perc +"% threshold of " + Image + ": " + 0.5*(values[i+1] + values[i]));
 
 	return 0.5*(values[i+1] + values[i]);
 }
@@ -481,10 +537,8 @@ function selectForeground (Input){
 	run("Create Selection");
 }
 
-function CellSeg(Image, ChDAPI){
+function CellSeg(Image, ChDAPI, boundary_radius){
 	// run StarDist
-
-	print(ChDAPI);
 
 	selectWindow(Image);
 	setSlice(ChDAPI);
@@ -499,60 +553,101 @@ function CellSeg(Image, ChDAPI){
 			"'nmsThresh':'0.4', "+
 			"'outputType':'Both', "+
 			"'nTiles':'1', "+
-			"'excludeBoundary':'15', "+
+			"'excludeBoundary':'" + boundary_radius + "', "+
 			"'roiPosition':'Automatic', "+
 			"'verbose':'false', "+
 			"'showCsbdeepProgress':'false', "+
 			"'showProbAndDist':'false'], "+
 			"process=[false]");
+	labelimage = getTitle();
+	return labelimage;
 }
 
-function cleanROIs(){
-	NCells = roiManager("count");
+function selectImagesFromFileList(InputArray, filetype){
+	// Goes through an array and identifies images.
+	// Returns: new array containing only images
+	array = newArray();
 
-	
-	// convert Measurements to arrays
-	roiManager("Measure");
-	NucleiSizes = newArray(NCells);
-	NucleiBrightness = newArray(NCells);
-	for (i = 0; i < NCells; i++) {
-		NucleiSizes[i] = getResult("Area", i);
-		NucleiBrightness[i] = getResult("Mean", i);
+	for (i = 0; i < InputArray.length; i++) {
+		if (endsWith(InputArray[i], filetype)) {
+			array = Array.concat(array, InputArray[i]);
+		}
 	}
 
-	// filter ROI list according to cell inclusion parameters
-	lower_brightness = PercOfArray(NucleiBrightness, lower_perc);
-	upper_brightness = PercOfArray(NucleiBrightness, upper_perc);
-	run("Clear Results");
+	return array;
+}
 
-	selectWindow("Label Image");
+function cleanROIs(image, FociChannel, labelimage){
+	
+	NCells = roiManager("count");
+	selectWindow(labelimage);
 
+	// filter ROI list according to size parameter
+	roiManager("deselect");
+	roiManager("Measure");
+	NucleiSize = ResultColumn2Array("Area");
+
+	// first, remove cells that do not match size boundaries
 	to_be_removed = newArray();
-	// remove bad ROIs from list
-	for (i = 0; i < NCells; i++) {
-		roiManager("select", i);
-		roiManager("measure");
-		area = getResult("Area", nResults - 1);
-		mean_brightness = getResult("Mean", nResults - 1);
-
-		// Is the brightness of this nucleus outside specified range?
-		if ((mean_brightness < lower_brightness) || (mean_brightness > upper_brightness)) {
-			to_be_removed = Array.concat(to_be_removed, i);
-			print("brightness wrong!");
-			run("Clear");
-		}
+	for (i = 0; i < nResults; i++) {
+		area = getResult("Area", i);
 
 		// Is the area of this nucleus too small?
 		if (area < min_size) {
 			to_be_removed = Array.concat(to_be_removed, i);
-			print("too small!");
-			run("Clear");
 		}
 	}
-
-	// remove from ROI Manager
+	// Remove
+	ClearIndecesFromImage(labelimage, to_be_removed);
 	roiManager("select", to_be_removed);
 	roiManager("delete");
 	run("Clear Results");
+
+	// Second, remove cells that do not match brightness boundaries
+	selectWindow(image);
+	setSlice(FociChannel);
 	
+	// get Measurement for brightness
+	roiManager("deselect");
+	roiManager("Measure");
+
+	// filter ROI list according to brightness parameter
+	NucleiBrightness = ResultColumn2Array("Mean");
+	lower_brightness = PercOfArray(NucleiBrightness, lower_perc);
+	upper_brightness = PercOfArray(NucleiBrightness, upper_perc);
+
+	NCells = roiManager("count");
+	to_be_removed = newArray();
+
+	selectWindow(labelimage);
+	for (i = 0; i < nResults; i++) {
+		mean_brightness = getResult("Mean", i);
+		if ((mean_brightness < lower_brightness) || (mean_brightness > upper_brightness)) {
+			to_be_removed = Array.concat(to_be_removed, i);
+		}
+	}
+	// Remove
+	ClearIndecesFromImage(labelimage, to_be_removed);
+	roiManager("select", to_be_removed);
+	roiManager("delete");
+	run("Clear Results");	
+}
+
+function ClearIndecesFromImage(Image, indeces){
+	// clears indeces from the ROI Manager from an image
+
+	selectWindow(Image);
+	for (i = 0; i < indeces.length; i++) {
+		roiManager("select", indeces[i]);
+		run("Clear");		
+	}
+}
+
+function ResultColumn2Array(Label){
+	// COnverts a specific column in the resultsTable into an Array
+	result = newArray(nResults);
+	for (i = 0; i < nResults; i++) {
+		result[i] = getResult(Label, i);
+	}
+	return result;
 }

@@ -139,6 +139,8 @@ function process_Main(fname, savepath){
 	 * Main function for the processing of a single image.
 	 */
 
+	print("Saving data to: " + savepath);
+
 	// Load Data
 	run("Bio-Formats (Windowless)", "open=["+fname+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
 	Image = File.nameWithoutExtension;
@@ -262,7 +264,12 @@ function process_Main(fname, savepath){
 	
 		
 	}
-	
+	/*
+	saveAs("Measurements_single", savepath + "results_" + Image + "_auto.csv");
+	saveAs("Measurements_avg", savepath + "results_" + Image + "_auto.csv");
+	roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
+	*/
+	/*
 	// When results are stored, add different ending to table.
 	// Otherwise, original measurements would be overwritten in valid mode.
 	if (Validation_mode) {
@@ -273,7 +280,8 @@ function process_Main(fname, savepath){
 		roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
 		selectWindow("Measurements_single");
 		saveAs("Measurements_single", savepath + "results_" + Image + "_auto.csv");
-	}	
+	}
+	*/	
 }
 
 

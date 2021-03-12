@@ -117,6 +117,7 @@ if (File.isDirectory(filename)) {
 		run("Clear Results");
 		process_Main(directory + images[i], savepath);
 		times = Array.concat(times, getTime() - t0);
+		close("*");
 	}	
 } else {
 	// create savedir
@@ -187,6 +188,8 @@ function process_Main(fname, savepath){
 	// Cell counting and measurement setup
 	NCells = roiManager("count");
 	Cellname = newArray(roiManager("count"));  // this array stores the names of all rois for later ID
+
+	print("Analyzing " + NCells + " cells");
 	
 	// Iterate over nuclei
 	selectWindow(Image);

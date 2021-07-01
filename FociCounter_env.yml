@@ -1,4 +1,4 @@
-name: napari-env
+name: focicounter-env
 channels:
   - defaults
 dependencies:

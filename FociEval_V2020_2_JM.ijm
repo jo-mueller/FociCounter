@@ -145,13 +145,13 @@ function process_Main(fname, savepath){
 	print("Saving data to: " + savepath);
 
 	// Load Data
-	run("Bio-Formats (Windowless)", "open=["+fname+"] color_mode=Composite rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
-	Image = File.nameWithoutExtension;
-	rename(Image);
+	run("Bio-Formats (Windowless)", "open=["+fname+"] color_mode=Composite view=Hyperstack stack_order=XYCZT"); 
+	img = File.nameWithoutExtension;
+	rename(img);
 
 	//--------------------Preprocess and settings-------------------
 	// get datatype of Image
-	selectWindow(Image);
+	selectWindow(img);
 	bD = bitDepth();
 	
 	// is it an RGB image?
@@ -173,8 +173,8 @@ function process_Main(fname, savepath){
 
 	//--------------------Actual processing-------------------
 	// Nucleus segmentation 
-	labelimg = CellSeg(Image, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
-	cleanROIs(Image, ChFoci, labelimg);  // remove cells that don't pass brightness/area criterion
+	labelimg = CellSeg(img, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
+	cleanROIs(img, ChFoci, labelimg);  // remove cells that don't pass brightness/area criterion
 
 	if (!useBatch) {
 		// to do: make introspection optional
@@ -192,9 +192,9 @@ function process_Main(fname, savepath){
 	print("Analyzing " + NCells + " cells");
 	
 	// Iterate over nuclei
-	selectWindow(Image);
+	selectWindow(img);
 	for (i = 0; i < NCells; i++) {
-		selectWindow(Image);
+		selectWindow(img);
 		setSlice(ChDAPI);
 		
 		roiManager("select", i);
@@ -214,7 +214,7 @@ function process_Main(fname, savepath){
 	
 	
 		// add 2nd channel (foci) to duplicate
-		selectWindow(Image);
+		selectWindow(img);
 		setSlice(ChFoci);
 		run("Copy");
 		run("Blue");
@@ -279,15 +279,15 @@ function process_Main(fname, savepath){
 	// When results are stored, add different ending to table.
 	// Otherwise, original measurements would be overwritten in valid mode.
 	if (Validation_mode) {
-		roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
+		roiManager("Save", savepath + "RoiSet_" + img + ".zip");
 		selectWindow("Measurements_avg");
-		saveAs("Measurements_avg", savepath + "results_" + Image + "_valid.csv");
+		saveAs("Measurements_avg", savepath + "results_" + img + "_valid.csv");
 	} else {
-		roiManager("Save", savepath + "RoiSet_" + Image + ".zip");
+		roiManager("Save", savepath + "RoiSet_" + img + ".zip");
 		selectWindow("Measurements_single");
-		saveAs("Measurements_single", savepath + "results_" + Image + "_auto_single.csv");
+		saveAs("Measurements_single", savepath + "results_" + img + "_auto_single.csv");
 		selectWindow("Measurements_avg");
-		saveAs("Measurements_avg", savepath + "results_" + Image + "_auto_avg.csv");
+		saveAs("Measurements_avg", savepath + "results_" + img + "_auto_avg.csv");
 	}
 }
 
@@ -450,7 +450,7 @@ function MutualDistance(X, Y){
 	return output[floor(output.length/2)];
 }
 
-function processPiece(Image, ROI, Slice, p, valid_mode){
+function processPiece(image, ROI, Slice, p, valid_mode){
 	// this function looks at a part of a cell that contains one (and only one) Foci
 	// and measures its area.
 	// Input:
@@ -459,7 +459,7 @@ function processPiece(Image, ROI, Slice, p, valid_mode){
 	// Slice - If the Image has more than one slice, specify it
 	// p - Threshold specification: percentage of max. intensity above which a pixel counts as foci
 
-	selectWindow(Image);
+	selectWindow(image);
 	roiManager("Select", ROI);
 
 	// duplicate piece
@@ -507,9 +507,9 @@ function PercOfArray(my_array, perc){
 	return my_array[index];
 }
 
-function getPercentile(Image, perc){
+function getPercentile(image, perc){
 
-	selectWindow(Image);
+	selectWindow(image);
 
 	// get histogram
 	nBins = 256;
@@ -564,10 +564,10 @@ function selectForeground (Input){
 	run("Create Selection");
 }
 
-function CellSeg(Image, ChDAPI, boundary_radius){
+function CellSeg(image, ChDAPI, boundary_radius){
 	// run StarDist
 
-	selectWindow(Image);
+	selectWindow(image);
 	setSlice(ChDAPI);
 	run("Duplicate...", "title=DAPI");
 	run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D], " +
@@ -660,10 +660,10 @@ function cleanROIs(image, FociChannel, labelimage){
 	run("Clear Results");	
 }
 
-function ClearIndecesFromImage(Image, indeces){
+function ClearIndecesFromImage(image, indeces){
 	// clears indeces from the ROI Manager from an image
 
-	selectWindow(Image);
+	selectWindow(image);
 	for (i = 0; i < indeces.length; i++) {
 		roiManager("select", indeces[i]);
 		run("Clear");		

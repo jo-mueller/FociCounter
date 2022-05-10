@@ -174,6 +174,7 @@ function process_Main(fname, savepath){
 	//--------------------Actual processing-------------------
 	// Nucleus segmentation 
 	labelimg = CellSeg(img, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
+	print(labelimg);
 	cleanROIs(img, ChFoci, labelimg);  // remove cells that don't pass brightness/area criterion
 
 	if (!useBatch) {
@@ -474,6 +475,7 @@ function processPiece(image, ROI, Slice, p, valid_mode){
 	BG = getPercentile("PuzzlePiece", 5);
 
 	if (valid_mode == false) {
+
 		setThreshold(BG + p * (Max - BG), Max);
 		run("Convert to Mask", "background=Dark black");
 		selectForeground("PuzzlePiece");
@@ -545,19 +547,6 @@ function enhanceVisibility(Image, DAPIchannel, fociChannel){
 	run("Enhance Contrast", "saturated=0.03");
 }
 
-function CellSeg(Input, channel) {
-	// Segment Nuclei
-	run("Duplicate...", "duplicate channels="+channel);
-	rename("CellMask");
-	run("Subtract Background...", "rolling=120");
-	run("Gaussian Blur...", "sigma=3");
-	setAutoThreshold("Default dark");
-	run("Convert to Mask");
-	run("Watershed");
-
-	return "CellMask";
-}
-
 function selectForeground (Input){
 	selectWindow(Input);
 	setThreshold(1, 100000);
@@ -607,27 +596,6 @@ function selectImagesFromFileList(InputArray, filetype){
 function cleanROIs(image, FociChannel, labelimage){
 	
 	NCells = roiManager("count");
-	selectWindow(labelimage);
-
-	// filter ROI list according to size parameter
-	roiManager("deselect");
-	roiManager("Measure");
-	NucleiSize = ResultColumn2Array("Area");
-
-	// first, remove cells that do not match size boundaries
-	to_be_removed = newArray();
-	for (i = 0; i < nResults; i++) {
-		area = getResult("Area", i);
-
-		// Is the area of this nucleus too small?
-		if (area < min_size) {
-			to_be_removed = Array.concat(to_be_removed, i);
-		}
-	}
-	// Remove
-	ClearIndecesFromImage(labelimage, to_be_removed);
-	roiManager("select", to_be_removed);
-	roiManager("delete");
 	run("Clear Results");
 
 	// Second, remove cells that do not match brightness boundaries
@@ -654,10 +622,11 @@ function cleanROIs(image, FociChannel, labelimage){
 		}
 	}
 	// Remove
+	Array.show(to_be_removed);
 	ClearIndecesFromImage(labelimage, to_be_removed);
 	roiManager("select", to_be_removed);
 	roiManager("delete");
-	run("Clear Results");	
+	run("Clear Results");
 }
 
 function ClearIndecesFromImage(image, indeces){

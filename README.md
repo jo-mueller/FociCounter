@@ -27,21 +27,13 @@ Parameters to be set and what they do:
 ## How itworks
 This section describes in brief what the script does and how it works.
 
-1. A sementation of the nuclei is first obtained with the StarDist plugin and some of the nuclei are excluded according to the above-described parameters. You are prompted with a review dialogue to approve:
-
-<img src="./docs/imgs/label_image.PNG" width="50%" height="50%">]
+1. A sementation of the nuclei is first obtained with the StarDist plugin and some of the nuclei are excluded according to the above-described parameters. You are prompted with a review dialogue to approve.
 
 2. The script iterates over every nucleus and detects the local maxima in the gH2AX-channel according to the prominence parameter above:
 
-<img src="./docs/imgs/detect_maxima.PNG" width="50%" height="50%">]
-
 3. A tesselation of the nucleus with the foci positions as centers is then created to split the nucleus into separate foci-assigne dregions. The background (defined as lower 5% quartile) and the maximum intensity are then measured for every foci.
 
-<img src="./docs/imgs/foci_pieces.PNG" width="50%" height="50%">]
-
 4. The size of the foci are measured by setting a threshold at `BG + 0.5 * ( Max - BG)` for each foci region, where `Max` is the intensity maximum of each foci and `BG` is the local background around each foci.
-
-<img src="./docs/imgs/segmented_foci.PNG" width="50%" height="50%">]
 
 ## Citation
 

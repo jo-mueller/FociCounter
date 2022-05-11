@@ -43,7 +43,3 @@ If you use this tool for your analysis, please cite the following sources:
 
 [2] Rassamegevanon, T., Feindt, L., Koi, L., Müller, J., Freudenberg, R., Löck, S., Sihver, W., Çevik, E., Kühn, A. C., von Neubeck, C., Linge, A., Pietzsch, H. J., Kotzerke, J., Baumann, M., Krause, M., &#38; Dietrich, A. (2021). Molecular Response to Combined Molecular- and External Radiotherapy in Head and Neck Squamous Cell Carcinoma (HNSCC). <i>Cancers 2021, Vol. 13, Page 5595</i>, <i>13</i>(22), 5595. https://doi.org/10.3390/CANCERS13225595</div>
 
-
-## Acknowledgements
-
-Image data for documentation: Alina Dornack, OncoRay, Tumor Pathophysiology group, Dresden, Germany

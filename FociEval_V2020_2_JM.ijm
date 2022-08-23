@@ -63,7 +63,7 @@ run("Clear Results");
 #@ Integer (label="DAPI channel", min=1, max=3, value=ChDAPI) ChDAPI
 
 #@ String (visibility=MESSAGE, value="Cell inclusion parameters", required=false) aa
-#@ Float (label="Minimal nucleus size (µm)", style="slider", min=0, max=100, stepSize=0.1, value=30) min_size
+#@ Integer (label="Minimal nucleus size (µm²)", style="slider", min=0, max=100000, stepSize=1, value=30) min_size
 #@ Float (label="Foci Brightness: lower percentile", style="slider", min=0, max=1, stepSize=0.01, value=0) lower_perc
 #@ Float (label="Foci Brightness: upper percentile", style="slider", min=0, max=1, stepSize=0.01, value=0.98) upper_perc
 #@ Float (label="Bundary exclusion radius (µm)", min=0, max=100, value=25) boundary_exclusion
@@ -174,7 +174,7 @@ function process_Main(fname, savepath){
 	//--------------------Actual processing-------------------
 	// Nucleus segmentation 
 	labelimg = CellSeg(img, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
-	print(labelimg);
+
 	cleanROIs(img, ChFoci, labelimg);  // remove cells that don't pass brightness/area criterion
 
 	if (!useBatch) {
@@ -568,7 +568,7 @@ function CellSeg(image, ChDAPI, boundary_radius){
 			"'probThresh':'0.3500000000000002', "+
 			"'nmsThresh':'0.4', "+
 			"'outputType':'Both', "+
-			"'nTiles':'1', "+
+			"'nTiles':'20', "+
 			"'excludeBoundary':'" + boundary_radius + "', "+
 			"'roiPosition':'Automatic', "+
 			"'verbose':'false', "+
@@ -622,6 +622,25 @@ function cleanROIs(image, FociChannel, labelimage){
 		}
 	}
 	// Remove
+	Array.show(to_be_removed);
+	ClearIndecesFromImage(labelimage, to_be_removed);
+	roiManager("select", to_be_removed);
+	roiManager("delete");
+	run("Clear Results");
+	
+	// filter ROI list according to selected minimal size
+	to_be_removed = newArray();
+	selectWindow(labelimage);
+	roiManager("deselect");
+	roiManager("Measure");
+	
+	for (i = 0; i < nResults; i++) {
+		area = getResult("Area", i);
+		print(area);
+		if ((area < min_size)) {
+			to_be_removed = Array.concat(to_be_removed, i);
+		}
+	}
 	Array.show(to_be_removed);
 	ClearIndecesFromImage(labelimage, to_be_removed);
 	roiManager("select", to_be_removed);

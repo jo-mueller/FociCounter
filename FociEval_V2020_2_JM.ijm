@@ -622,7 +622,7 @@ function cleanROIs(image, FociChannel, labelimage){
 		}
 	}
 	// Remove
-	Array.show(to_be_removed);
+	//Array.show(to_be_removed);
 	ClearIndecesFromImage(labelimage, to_be_removed);
 	roiManager("select", to_be_removed);
 	roiManager("delete");
@@ -641,7 +641,7 @@ function cleanROIs(image, FociChannel, labelimage){
 			to_be_removed = Array.concat(to_be_removed, i);
 		}
 	}
-	Array.show(to_be_removed);
+	//Array.show(to_be_removed);
 	ClearIndecesFromImage(labelimage, to_be_removed);
 	roiManager("select", to_be_removed);
 	roiManager("delete");

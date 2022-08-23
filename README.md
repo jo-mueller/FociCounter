@@ -45,3 +45,6 @@ If you use this tool for your analysis, please cite the following sources:
 
 [3] Suckert, T.; Rassamegevanon, T.; Müller, J.; Dietrich, A.; Graja, A.; Reiche, M.; Löck, S.; Krause, M.; Beyreuther, E.; von Neubeck, C. Applying Tissue Slice Culture in Cancer Research—Insights from Preclinical Proton Radiotherapy. Cancers 2020, 12, 1589. https://doi.org/10.3390/cancers12061589
 
+## Known issues
+
+* Stardist failing for larger images (red Java-specific error message): In this case, change the `nTiles` parameter in the stardist command to a higher value (i.e., 20). You can find the Stardist command by search for `run("Command From Macro", "command=[de.csbdresden.stardist.StarDist2D]"` in the script.

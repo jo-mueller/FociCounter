@@ -90,7 +90,7 @@ run("Set Measurements...", "area mean min median center display redirect=None de
 
 // Create Results tables
 run("Table...", "name=[Measurements_avg] width=800 height=600");
-print("[Measurements_avg]", "\\Headings:Filename\tNucleusLabel \tArea \tN_Foci \tFSize_Mean \tFSize_Std \tMutualdistance");
+print("[Measurements_avg]", "\\Headings:Filename\tNucleusLabel \tArea \tN_Foci \tFSize_Mean \tFSize_Std \tMutualdistance \tDistance_to_edge");
 run("Table...", "name=[Measurements_single] width=800 height=600");
 print("[Measurements_single]", "\\Headings:Filename\tNucleusLabel \tArea  \tFSize");
 
@@ -174,8 +174,16 @@ function process_Main(fname, savepath){
 	boundary_exclusion = floor(boundary_exclusion/pixelWidth);  // convert this into pixel units and make global
 
 	//--------------------Actual processing-------------------
-	// Spheroid segmentation
+	
+	// Spheroid segmentation and EDT
 	segment_spheroid(img, ChDAPI, pixelWidth);
+	selectWindow("spheroid_map");
+	saveAs(".tif", savepath + "/spheroid_binary.tif");
+	rename("spheroid_map");
+	
+	selectWindow("euclidian_distance_map");
+	saveAs(".tif", savepath + "/Euclidian_distance_map.tif");
+	rename("euclidian_distance_map");
 	
 	// Nucleus segmentation 
 	labelimg = CellSeg(img, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
@@ -189,9 +197,6 @@ function process_Main(fname, savepath){
 			exit();	
 		}
 	}
-	
-	exit();
-	
 
 	// Cell counting and measurement setup
 	NCells = roiManager("count");
@@ -212,6 +217,11 @@ function process_Main(fname, savepath){
 		// Measure the size
 		run("Measure");
 		SizeNucleus = getResult("Area", nResults()-1);
+		
+		// Measure distance to spheroid edge
+		selectWindow("euclidian_distance_map");
+		roiManager("select", i);
+		distance_to_edge = getResult("Mean", nResults()-1);
 	
 		// A duplicate of the cell is created here. Can be saved, or discarded (see option above)
 		// add first channel to duplicate. This is done channelwise to avoid channel/slice/timepoint confusion
@@ -322,14 +332,17 @@ function segment_spheroid(img, nchannel, pixelsize){
 	Ext.CLIJ2_pull(image_threshold_huang_3);
 	
 	// Closing Box
-	number_of_dilations_and_erosions = 100.0;
-	Ext.CLIJ2_closingBox(image_threshold_huang_3, image_closing_box_4, number_of_dilations_and_erosions);
+	Ext.CLIJ2_binaryFillHoles(image_threshold_huang_3, image_closed);
 	Ext.CLIJ2_release(image_threshold_huang_3);
+	Ext.CLIJ2_pull(image_closed);
 	
-	Ext.CLIJ2_pull(image_closing_box_4);
+	number_of_dilations_and_erotions = 30.0;
+	Ext.CLIJ2_closingDiamond(image_closed, image_closing_box_4, number_of_dilations_and_erotions);
+	Ext.CLIJ2_binaryFillHoles(image_closing_box_4, image_closed);
+	Ext.CLIJ2_release(image_closing_box_4);
 	
 	// Connected Components Labeling Box
-	Ext.CLIJ2_connectedComponentsLabelingBox(image_closing_box_4, image_connected_components_labeling_box_5);
+	Ext.CLIJ2_connectedComponentsLabelingBox(image_closed, image_connected_components_labeling_box_5);
 	Ext.CLIJ2_release(image_closing_box_4);
 	
 	Ext.CLIJ2_pull(image_connected_components_labeling_box_5);
@@ -343,12 +356,12 @@ function segment_spheroid(img, nchannel, pixelsize){
 	run("glasbey_on_dark");
 	Ext.CLIJ2_release(image_exclude_labels_on_edges_6);
 	
-	rename("Spheroid_map");
+	rename("spheroid_map");
 	run("8-bit");
 	
 	run("Exact Signed Euclidean Distance Transform (3D)");
 	run("Multiply...", "value=" + pixelsize);
-	rename("Euclidian_distance_map");
+	rename("euclidian_distance_map");
 	
 }
 
@@ -458,7 +471,8 @@ function process_Nucleus(image, nFoci, NCells){
 								nFoci+"\t" +   			// Foci number
 								mean +"\t"+   			// Mean Foci Size
 								stdDev + "\t" +  		// std deviation of foci size
-								MutDist);				// Mutual Distance of foci
+								MutDist + "\t" + 		// Mutual Distance of foci
+								distance_to_edge); 		// Distance to spheroid edge
 
 	// write foci-wise results to table
 	// print("[Measurements_single]", "\\Headings:Filename\tNucleusLabel \tArea  \tFSize");
@@ -622,7 +636,7 @@ function CellSeg(image, ChDAPI, boundary_radius){
 			"'probThresh':'0.3500000000000002', "+
 			"'nmsThresh':'0.4', "+
 			"'outputType':'Both', "+
-			"'nTiles':'1', "+
+			"'nTiles':'20', "+
 			"'excludeBoundary':'" + boundary_radius + "', "+
 			"'roiPosition':'Automatic', "+
 			"'verbose':'false', "+
@@ -676,7 +690,26 @@ function cleanROIs(image, FociChannel, labelimage){
 		}
 	}
 	// Remove
-	Array.show(to_be_removed);
+	//Array.show(to_be_removed);
+	ClearIndecesFromImage(labelimage, to_be_removed);
+	roiManager("select", to_be_removed);
+	roiManager("delete");
+	run("Clear Results");
+	
+	// filter ROI list according to selected minimal size
+	to_be_removed = newArray();
+	selectWindow(labelimage);
+	roiManager("deselect");
+	roiManager("Measure");
+	
+	for (i = 0; i < nResults; i++) {
+		area = getResult("Area", i);
+		print(area);
+		if ((area < min_size)) {
+			to_be_removed = Array.concat(to_be_removed, i);
+		}
+	}
+	//Array.show(to_be_removed);
 	ClearIndecesFromImage(labelimage, to_be_removed);
 	roiManager("select", to_be_removed);
 	roiManager("delete");

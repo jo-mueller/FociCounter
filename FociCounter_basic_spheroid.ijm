@@ -189,6 +189,8 @@ function process_Main(fname, savepath){
 	labelimg = CellSeg(img, ChDAPI, boundary_exclusion);  // segment DAPI image with Stardist 2D
 	cleanROIs(img, ChFoci, labelimg);  // remove cells that don't pass brightness/area criterion
 	run("Set Scale...", "distance="+pixelWidth+" known=1 unit=" + unit + " global");
+	saveAs(".tif", savepath + "/label_image.tif");
+	rename(labelimg);
 
 	if (!useBatch) {
 		// to do: make introspection optional

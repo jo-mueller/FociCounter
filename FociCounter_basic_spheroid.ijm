@@ -223,6 +223,7 @@ function process_Main(fname, savepath){
 		// Measure distance to spheroid edge
 		selectWindow("euclidian_distance_map");
 		roiManager("select", i);
+		run("Measure");
 		distance_to_edge = getResult("Mean", nResults()-1);
 	
 		// A duplicate of the cell is created here. Can be saved, or discarded (see option above)
@@ -327,9 +328,13 @@ function segment_spheroid(img, nchannel, pixelsize){
 	
 	Ext.CLIJ2_pushCurrentZStack(DAPI);
 	
-	// Threshold Huang
-	Ext.CLIJ2_thresholdHuang(DAPI, image_threshold_huang_3);
+	// Blur image
+	Ext.CLIJ2_gaussianBlur2D(DAPI, DAPI_blurred, 50, 50);
 	Ext.CLIJ2_release(DAPI);
+	
+	// Threshold Huang
+	Ext.CLIJ2_thresholdHuang(DAPI_blurred, image_threshold_huang_3);
+	Ext.CLIJ2_release(DAPI_blurred);
 	
 	Ext.CLIJ2_pull(image_threshold_huang_3);
 	
@@ -362,6 +367,8 @@ function segment_spheroid(img, nchannel, pixelsize){
 	run("8-bit");
 	
 	run("Exact Signed Euclidean Distance Transform (3D)");
+	
+	selectWindow("EDT");
 	run("Multiply...", "value=" + pixelsize);
 	rename("euclidian_distance_map");
 	
@@ -638,7 +645,7 @@ function CellSeg(image, ChDAPI, boundary_radius){
 			"'probThresh':'0.3500000000000002', "+
 			"'nmsThresh':'0.4', "+
 			"'outputType':'Both', "+
-			"'nTiles':'20', "+
+			"'nTiles':'50', "+
 			"'excludeBoundary':'" + boundary_radius + "', "+
 			"'roiPosition':'Automatic', "+
 			"'verbose':'false', "+

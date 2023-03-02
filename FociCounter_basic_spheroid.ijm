@@ -268,6 +268,17 @@ function process_Main(fname, savepath){
 		// This part measures the size of the foci
 		if (nFoci > 0) {
 			process_Nucleus(Cellname[i], nFoci, NCells);
+		} else {
+			// for cells without foci: print cell-averaged results to table
+			//print("[Measurements_avg]", "\\Headings:Filename\tNucleusLabel \tArea \tN_Foci \tFSize_Mean \tFSize_Std \tMutualdistance");
+			print("[Measurements_avg]", fname + "\t" + 			// Filename
+										Cellname[i] +"\t" +  	// Nucleus label
+										SizeNucleus +"\t"+   	// Nucleus area
+										0+"\t" +   			// Foci number
+										"NaN\t"+   			// Mean Foci Size
+										"NaN\t" +  		// std deviation of foci size
+										"Nan\t" + 		// Mutual Distance of foci
+										distance_to_edge); 		// Distance to spheroid edge
 		}
 	
 		// If images of each cell should be stored (no matter how many foci).
